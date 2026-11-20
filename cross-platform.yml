@@ -1,0 +1,78 @@
+name: Cross-platform checks
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  static-checks:
+    name: Static checks (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - windows-latest
+          - macos-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          package-manager-cache: false
+
+      - name: Confirm HTML, CSS, and JavaScript files are present
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          count_files() {
+            find . \
+              -type d \( -name .git -o -name node_modules \) -prune -o \
+              -type f -iname "$1" -print | wc -l | tr -d '[:space:]'
+          }
+
+          html_count="$(count_files '*.html')"
+          css_count="$(count_files '*.css')"
+          js_count=$(( $(count_files '*.js') + $(count_files '*.mjs') + $(count_files '*.cjs') ))
+
+          echo "HTML files: $html_count"
+          echo "CSS files: $css_count"
+          echo "JavaScript files: $js_count"
+
+          if [ "$html_count" -eq 0 ] || [ "$css_count" -eq 0 ] || [ "$js_count" -eq 0 ]; then
+            echo "Expected at least one HTML, CSS, and JavaScript file."
+            exit 1
+          fi
+
+      - name: Check JavaScript syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          checked=0
+
+          while IFS= read -r -d '' file; do
+            echo "Checking $file"
+            node --check "$file"
+            checked=$((checked + 1))
+          done < <(
+            find . \
+              -type d \( -name .git -o -name node_modules \) -prune -o \
+              -type f \( -iname '*.js' -o -iname '*.mjs' -o -iname '*.cjs' \) -print0
+          )
+
+          if [ "$checked" -eq 0 ]; then
+            echo "No JavaScript files were found to check."
+            exit 1
+          fi
+
+          echo "Successfully checked $checked JavaScript file(s)."
